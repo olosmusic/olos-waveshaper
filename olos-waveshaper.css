@@ -1,0 +1,15 @@
+:host {
+  display: block;
+}
+
+// :host canvas.p5_hidden {
+// 	visibility: visible !important;
+// }
+
+// #canvas_container canvas.p5_hidden {
+// 	visibility: visible !important;
+// }
+
+// .p5_hidden {
+// 	visibility: visible !important;
+// }

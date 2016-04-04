@@ -1,0 +1,227 @@
+<link rel="import" href="../polymer/polymer.html">
+
+<!--
+olos-waveshaper is built with a
+<a href="https://developer.mozilla.org/en-US/docs/Web/API/WaveShaperNode">WaveShaperNode</a>
+which  uses a curve to apply a wave shaping distortion to the signal. Beside obvious
+distortion effects, it is often used to add a warm feeling to the signal. (via <a href="https://developer.mozilla.org/en-US/docs/Web/API/WaveShaperNode">MDN</a>)
+##### Example
+
+
+@element olos-waveshaper
+@blurb 
+@status alpha
+@homepage http://olosmusic.github.io/olos-waveshaper
+-->
+<dom-module id="olos-waveshaper">
+  <link rel="import" type="css" href="olos-waveshaper.css">
+  <template>
+
+
+    <div id="canvas_container">
+
+    </div>
+
+  </template>
+  <script>
+    function getPeaks(buffer, length) {
+      var sampleSize = buffer.length / Math.min(length, buffer.length);
+      var sampleStep = ~~(sampleSize / 10) || 1;
+      var peaks = new Float32Array(Math.min(length, buffer.length));
+      var chan = buffer;
+      for (var i = 0; i < length; i++) {
+        var start = ~~(i * sampleSize);
+        var end = ~~(start + sampleSize);
+        var max = 0;
+        for (var j = start; j < end; j += sampleStep) {
+          var value = chan[j];
+          if (value > max) {
+            max = value;
+          } else if (-value > max) {
+            max = value;
+          }
+        }
+        peaks[i] = max;
+      }
+      return peaks;
+    }
+    (function (params) {
+      Polymer({
+        is: 'olos-waveshaper',
+        properties: {
+          // p5 sketch
+          _sketch: { value: null },
+          curve: {
+            value: null,
+            notify: true,
+            observer: 'curveChanged'
+          },
+          // distFunc: {
+          //   value: function() {},
+          //   type: Function,
+          //   observer: 'distFuncChanged'
+          // },
+          // inputs and outputs
+          inputAudio: {
+            value: null,
+            notify: true
+          },
+          output: {
+            value: null,
+            notify: true
+          },
+          publicMethods: {
+            type: Array,
+            value: function () {
+              return [
+                'distFunc',
+                'setArray'
+              ];
+            }
+          },
+          rootfolder: {
+            type: String,
+            value: '../olos-waveshaper/'
+          },
+          set: { observer: 'setChanged' }
+        },
+        ready: function () {
+          var self = this;
+          self._audioContext = audioContext;
+          self.playing = false;
+          self.inputAudio = self.waveShaper = self.output = audioContext.createWaveShaper();
+          self.distFunc();
+          /**
+           *  The curve of the WaveShaperNode.
+           *
+           *  @property curve
+           *  @type Float32Array
+           */
+          Object.defineProperty(self, 'curve', {
+            'get': function () {
+              return self.waveShaper.curve;
+            },
+            'set': function (val) {
+              self.waveShaper.curve = val;
+              self.curveChanged();
+            }
+          });
+          this._initCanvas();
+        },
+        /**
+         *  Set the waveshaper curve to a custom array.
+         *  By default, audio signals are between -1 and 1, but you can apply a custom scale.
+         *  
+         *  @method setArray
+         */
+        setArray: function () {
+          var customArray = [
+            -1,
+            1
+          ];
+          this.waveShaper.curve = new Float32Array(customArray);
+
+          this.drawWaveShape();
+        },
+        /**
+         *  distFunc applies a waveshaping distortion function
+         *
+         *  @method distFunc
+         */
+        distFunc: function () {
+          this.waveShaper.curve = makeDistortionCurve(400);
+          function makeDistortionCurve(amount) {
+            var k = typeof amount === 'number' ? amount : 50, n_samples = 44100, curve = new Float32Array(n_samples), deg = Math.PI / 180, i = 0, x;
+            for (; i < n_samples; ++i) {
+              x = i * 2 / n_samples - 1;
+              curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
+            }
+            return curve;
+          }
+
+          this.drawWaveShape();
+        },
+        // TO DO: animate!
+        animate: function () {
+          this.sliderValue = this.waveshaperNode.frequency.value;
+        },
+        dispose: function () {
+          var nodes = [
+            'output',
+            'waveshaperNode'
+          ];
+          for (var i = 0; i < nodes.length; i++) {
+            try {
+              var node = self[nodes[i]];
+              node.disconnect();
+              node = null;
+            } catch (e) {
+            }
+          }
+        },
+        setChanged: function () {
+          this.drawWaveShape();
+        },
+        setArrayChanged: function () {
+          this.drawWaveShape();
+        },
+        distFuncChanged: function () {
+          this.drawWaveShape();
+        },
+        drawWaveShape: function () {
+          var self = this;
+          var sketch = self._p5;
+          if (sketch) {
+            sketch.draw();
+          }
+        },
+        curveChanged: function () {
+          this.drawWaveShape();
+        },
+        _initCanvas: function () {
+          var self = this;
+          self._sketch = function (sketch) {
+            sketch.setup = function () {
+              sketch.cnv = sketch.createCanvas(300, 255);
+              sketch.background(255, 255, 0);
+              sketch.noFill();
+              sketch.noLoop();
+            };
+            sketch.draw = function () {
+              var curve = self.waveShaper.curve;
+              var peaks = getPeaks(curve, sketch.width);
+              sketch.background(70, 100, 0);
+              sketch.strokeWeight(2);
+              sketch.stroke(255, 255, 255);
+              sketch.beginShape();
+              for (var i = 0; i < peaks.length; i++) {
+                var x = sketch.map(i, 0, peaks.length - 1, 0, sketch.width);
+                var y = sketch.map(peaks[i], -1, 1, sketch.height, 0);
+                sketch.vertex(x, y);
+              }
+              sketch.endShape();
+            };
+            sketch.update = function () {
+              var x = 0;
+              for (var i = 0; i < self.waveShaper.curve.length; i++) {
+                x += i;
+              }
+              console.log(i);
+            };
+            sketch.onresize = function () {
+              var compStyle = getComputedStyle(self);
+              var w = Number(compStyle.width.split('px')[0]);
+              var h = Number(compStyle.height.split('px')[0]);
+              sketch.resizeCanvas(w, h);
+            };
+          };
+          self._p5 = new p5(self._sketch, self.$.canvas_container);
+          self._p5.canvas.style.visibility = 'visible';
+        },
+        resize: function () {
+          this._p5.onresize();
+        }
+      });
+    }());
+  </script>
+</dom-module>
